@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Documentação: Instalação do GLPI Agent via GPO com PowerShell</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            line-height: 1.6;
+            color: #333;
+        }
+        h1, h2, h3 {
+            color: #1a5276;
+            border-bottom: 2px solid #1a5276;
+            padding-bottom: 5px;
+        }
+        h1 {
+            text-align: center;
+        }
+        pre {
+            background-color: #f4f4f4;
+            border: 1px solid #ddd;
+            padding: 10px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        code {
+            font-family: Consolas, monospace;
+            color: #c7254e;
+            background-color: #f9f2f4;
+            padding: 2px 4px;
+            border-radius: 4px;
+        }
+        .container {
+            max-width: 900px;
+            margin: auto;
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        .step {
+            margin-bottom: 20px;
+        }
+        .note {
+            background-color: #fff3cd;
+            border-left: 4px solid #ffeeba;
+            padding: 15px;
+            margin: 15px 0;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Documentação: Instalação do GLPI Agent via GPO com PowerShell</h1>
+    <p>Este documento detalha o procedimento para automatizar a instalação do GLPI Agent em computadores Windows utilizando uma Política de Grupo (GPO) e um script PowerShell.</p>
+
+    <div class="step">
+        <h2>Passo 1: Preparar o ambiente</h2>
+        <ol>
+            <li>
+                <h3>Criar a pasta de compartilhamento</h3>
+                <p>No seu servidor de arquivos (ex: controlador de domínio), crie uma pasta que será acessível aos computadores. Exemplo: <code>C:\GLPI-Deploy</code>.</p>
+            </li>
+            <li>
+                <h3>Definir as permissões</h3>
+                <p>Compartilhe a pasta criada (ex: <code>\\eos.ac.cloud\glpi$</code>) e configure as permissões:</p>
+                <ul>
+                    <li>**Permissões de Compartilhamento:** Adicione o grupo <strong>`Computadores do Domínio`</strong> com permissão de <strong>`Leitura`</strong>.</li>
+                    <li>**Permissões de Segurança (NTFS):** Adicione o grupo <strong>`Computadores do Domínio`</strong> e atribua as permissões de <strong>`Ler e executar`</strong>, <strong>`Listar conteúdo da pasta`</strong> e <strong>`Leitura`</strong>.</li>
+                </ul>
+            </li>
+            <li>
+                <h3>Baixar os arquivos</h3>
+                <p>Baixe o instalador do GLPI Agent (<code>GLPI-Agent-1.15-x64.msi</code>) e o script PowerShell (<code>Install-GLPIAgent.ps1</code>) e coloque-os na pasta de compartilhamento.</p>
+                <p>O script PowerShell é fornecido no Passo 2.</p>
+            </li>
+        </ol>
+    </div>
+
+    <div class="step">
+        <h2>Passo 2: Criar e configurar o script PowerShell</h2>
+        <p>Crie um arquivo chamado <code>Install-GLPIAgent.ps1</code> e adicione o seguinte conteúdo. Edite as variáveis <code>$msiFileName</code> e <code>$glpiServer</code> conforme seu ambiente.</p>
+        <pre><code class="language-powershell"># Instalação automatizada do GLPI Agent para GPO
+# Adaptado para o seu ambiente específico.
+# SALVE ESTE ARQUIVO COMO 'Install-GLPIAgent.ps1' NO COMPARTILHAMENTO DE REDE.
+
+# ==================== INÍCIO DA CONFIGURAÇÃO ====================
+
+# Nome do arquivo MSI do instalador
+$msiFileName = "GLPI-Agent-1.15-x64.msi"
+
+# Caminho completo para o arquivo MSI. A variável $PSScriptRoot retorna o diretório do script.
+$msiPath = Join-Path -Path $PSScriptRoot -ChildPath $msiFileName
+
+# URL do servidor GLPI
+$glpiServer = "https://glpi.sclink.com.br"
+
+# Parâmetros de instalação do MSI (ajuste conforme a necessidade)
+# /quiet: Instala silenciosamente, sem interface.
+# /norestart: Impede reinicialização automática.
+# SERVER: Configura a URL do servidor GLPI.
+# RUNNOW=1: Força um inventário imediato após a instalação.
+# /L*v: Habilita um log de verbose, salvando no local especificado.
+$msiArguments = "/i `"$msiPath`" /quiet /norestart SERVER=`"$glpiServer`" RUNNOW=1 /L*v `"$env:TEMP\glpi_install.log`""
+
+# ==================== FIM DA CONFIGURAÇÃO ====================
+
+# ==================== LÓGICA DE INSTALAÇÃO ====================
+
+# Cria o log de execução do script PowerShell
+$scriptLogFile = "$env:TEMP\glpi_deployment_ps.log"
+
+# Define a função de log
+function Write-Log {
+    param (
+        [string]$Message,
+        [string]$LogFile = $scriptLogFile
+    )
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    Add-Content -Path $LogFile -Value "[$timestamp] $Message"
+}
+
+Write-Log "Iniciando a instalação do GLPI Agent."
+Write-Log "Caminho do MSI: $msiPath"
+
+# Verifica se o arquivo MSI existe antes de tentar a instalação
+if (-Not (Test-Path -Path $msiPath)) {
+    Write-Log "ERRO: Arquivo MSI não encontrado em $msiPath. Verifique o caminho do compartilhamento de rede e as permissões."
+    exit 1
+}
+
+# Inicia o processo de instalação e aguarda a conclusão
+Write-Log "Executando: msiexec.exe $msiArguments"
+$installProcess = Start-Process -FilePath "msiexec.exe" -ArgumentList $msiArguments -Wait -PassThru -NoNewWindow
+
+# Verifica o código de saída do processo de instalação do MSI
+if ($installProcess.ExitCode -eq 0) {
+    Write-Log "Instalação do GLPI Agent concluída com sucesso."
+    Write-Log "Verifique o log detalhado em $env:TEMP\glpi_install.log para mais informações."
+} else {
+    Write-Log "ERRO: A instalação do GLPI Agent falhou com código de saída $($installProcess.ExitCode)."
+    Write-Log "Verifique o log detalhado em $env:TEMP\glpi_install.log para a causa da falha."
+}
+</code></pre>
+    </div>
+
+    <div class="step">
+        <h2>Passo 3: Configurar a Política de Grupo (GPO)</h2>
+        <ol>
+            <li>
+                <h3>Criar a GPO</h3>
+                <p>No **Gerenciamento de Política de Grupo** do seu servidor, crie uma nova GPO e vincule-a à Unidade Organizacional (OU) que contém os computadores de destino. Nomeie-a como "Instalação GLPI Agente".</p>
+            </li>
+            <li>
+                <h3>Editar as configurações</h3>
+                <p>Edite a GPO e navegue até:</p>
+                <p><code>Configuração do Computador > Políticas > Configurações do Windows > Scripts (Inicialização/Desligamento)</code></p>
+                <p>Clique duas vezes em **Inicialização** e vá para a aba **Scripts do PowerShell**.</p>
+                <p>Clique em **Adicionar** e preencha da seguinte forma:</p>
+                <ul>
+                    <li>**Nome do Script:** <code>powershell.exe</code></li>
+                    <li>**Parâmetros do Script:** <code>-ExecutionPolicy Bypass -File "\\eos.ac.cloud\glpi$\Install-GLPIAgent.ps1"</code></li>
+                </ul>
+            </li>
+            <li>
+                <h3>Ajustar a espera da rede</h3>
+                <p>Em algumas redes, a inicialização pode ser rápida demais. Para evitar problemas de conexão com o compartilhamento, configure a seguinte política:</p>
+                <p>Navegue até: <code>Configuração do Computador > Políticas > Modelos Administrativos > Sistema > Logon</code></p>
+                <p>Habilite a política **"Aguardar sempre a rede ao iniciar o computador e fazer logon"**.</p>
+            </li>
+        </ol>
+    </div>
+
+    <div class="step">
+        <h2>Passo 4: Finalizar e verificar</h2>
+        <ol>
+            <li>
+                <h3>Aplicar a GPO</h3>
+                <p>Para aplicar a GPO nas máquinas clientes, reinicie os computadores ou execute o comando <code>gpupdate /force</code> em cada um deles.</p>
+            </li>
+            <li>
+                <h3>Verificar os logs</h3>
+                <p>Após a reinicialização, verifique os logs gerados na pasta temporária do Windows (<code>C:\Windows\Temp</code>):</p>
+                <ul>
+                    <li><code>glpi_deployment_ps.log</code>: Log de execução do script PowerShell.</li>
+                    <li><code>glpi_install.log</code>: Log detalhado da instalação do MSI.</li>
+                </ul>
+            </li>
+            <li>
+                <h3>Confirmar no GLPI</h3>
+                <p>Após alguns minutos, acesse seu GLPI em <code>https://glpi.sclink.com.br</code> e verifique se os novos ativos inventariados estão aparecendo em **Ativos > Computadores**.</p>
+            </li>
+        </ol>
+    </div>
+</div>
+
+</body>
+</html>
